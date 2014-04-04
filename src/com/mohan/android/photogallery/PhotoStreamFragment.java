@@ -3,15 +3,20 @@ package com.mohan.android.photogallery;
 import java.util.ArrayList;
 
 import android.annotation.TargetApi;
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.support.v4.util.LruCache;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
@@ -26,15 +31,17 @@ public class PhotoStreamFragment extends Fragment {
 	ThumbnailDownloader<ImageView> mThumbnailThread;
 	private int mPage = 1;
 	private LruCache<String, Bitmap> mCache;
+	private String mQuery = null;
 	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setRetainInstance(true);
+		setHasOptionsMenu(true);
 		
 		//Create a cache to store bitmaps generated in the future
 		int maxMemory = (int)(Runtime.getRuntime().maxMemory()/1024);
-		int cacheSize = maxMemory/8;
+		int cacheSize = maxMemory/4;
 		mCache = new LruCache<String, Bitmap>(cacheSize) {
 			@TargetApi(12)
 			@Override
@@ -49,15 +56,15 @@ public class PhotoStreamFragment extends Fragment {
 			}
 		};
 		
-		new FetchItemsTask().execute();
+		updateItems();
 		
 		mThumbnailThread = new ThumbnailDownloader<ImageView>(new Handler());
 		mThumbnailThread.setListener(new ThumbnailDownloader.Listener<ImageView>() {
 			//Implement the inherited abstract method onThumbnailDownloaded
 			public void onThumbnailDownloaded(ImageView imageView, String url, Bitmap thumbnail) {
 				if (isVisible()) {
-					imageView.setImageBitmap(thumbnail);
 					addToCache(url, thumbnail);
+					imageView.setImageBitmap(thumbnail);
 				}
 			}
 		});
@@ -90,6 +97,36 @@ public class PhotoStreamFragment extends Fragment {
 		Log.i(TAG, "Background thread ended.");
 	}
 	
+	@Override
+	public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+		super.onCreateOptionsMenu(menu, inflater);
+		inflater.inflate(R.menu.fragment_photo_stream, menu);
+	}
+	
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		switch (item.getItemId()) {
+			case R.id.menu_item_search:
+				getActivity().onSearchRequested();
+				return true;
+			case R.id.menu_item_clear:
+				if (mQuery == null) return true;
+				PreferenceManager.getDefaultSharedPreferences(getActivity())
+					.edit()
+					//Put in null value for searchQuery
+					.putString(PhotoFetcher.PREF_SEARCH_QUERY, null)
+					.commit();
+				updateItems();
+				return true;
+			default:
+				return super.onOptionsItemSelected(item);
+		}
+	}
+	
+	public void updateItems() {
+		new FetchItemsTask().execute();
+	}
+	
 	void setupAdapter() {
 		if (getActivity() == null || mGridView == null) return;
 		
@@ -104,7 +141,19 @@ public class PhotoStreamFragment extends Fragment {
 		
 		@Override
 		protected ArrayList<GalleryItem> doInBackground(Void...params) {
-			return new PhotoFetcher().fetchItems(mPage);
+			
+			//Make sure there is an activity
+			Activity activity = getActivity();
+			if (activity == null) return new ArrayList<GalleryItem>();
+			
+			mQuery = PreferenceManager.getDefaultSharedPreferences(activity)
+				.getString(PhotoFetcher.PREF_SEARCH_QUERY, null);
+			
+			if (mQuery != null) {
+				return new PhotoFetcher().searchFlickr(mQuery);
+			} else {
+				return new PhotoFetcher().fetchFlickrItems(""+mPage);
+			}
 		}
 		
 		//Use AsyncTask inherited method onPostExecute to run some methods after
