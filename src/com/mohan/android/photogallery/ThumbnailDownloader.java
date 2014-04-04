@@ -23,7 +23,7 @@ public class ThumbnailDownloader<Token> extends HandlerThread {
 	Listener<Token> mListener;
 	
 	public interface Listener<Token> {
-		void onThumbnailDownloaded(Token token, Bitmap thumbnail);
+		void onThumbnailDownloaded(Token token, String url, Bitmap thumbnail);
 	}
 	
 	public void setListener(Listener<Token> listener) {
@@ -66,6 +66,9 @@ public class ThumbnailDownloader<Token> extends HandlerThread {
 			if (url == null) return;
 			
 			byte[] bitmapBytes = new PhotoFetcher().getUrlBytes(url);
+			//Check to make sure that bitmapBytes is not null
+			//This could happen if the HTTP response code is not HTTP_OK
+			if (bitmapBytes == null) return;
 			final Bitmap bitmap = BitmapFactory.decodeByteArray(bitmapBytes, 0, bitmapBytes.length);
 			Log.i(TAG, "bitmap created");
 			
@@ -73,7 +76,7 @@ public class ThumbnailDownloader<Token> extends HandlerThread {
 				public void run() {
 					if (requestMap.get(token) != url) return;
 					requestMap.remove(token);
-					mListener.onThumbnailDownloaded(token, bitmap);
+					mListener.onThumbnailDownloaded(token, url, bitmap);
 				}
 			});
 		} catch (IOException ioe) {

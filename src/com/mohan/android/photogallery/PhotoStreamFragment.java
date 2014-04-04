@@ -2,11 +2,14 @@ package com.mohan.android.photogallery;
 
 import java.util.ArrayList;
 
+import android.annotation.TargetApi;
 import android.graphics.Bitmap;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.support.v4.app.Fragment;
+import android.support.v4.util.LruCache;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -22,20 +25,39 @@ public class PhotoStreamFragment extends Fragment {
 	private ArrayList<GalleryItem> mItems;
 	ThumbnailDownloader<ImageView> mThumbnailThread;
 	private int mPage = 1;
+	private LruCache<String, Bitmap> mCache;
 	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setRetainInstance(true);
 		
+		//Create a cache to store bitmaps generated in the future
+		int maxMemory = (int)(Runtime.getRuntime().maxMemory()/1024);
+		int cacheSize = maxMemory/8;
+		mCache = new LruCache<String, Bitmap>(cacheSize) {
+			@TargetApi(12)
+			@Override
+			protected int sizeOf(String key, Bitmap bitmap) {
+				//Get cache size in kB instead of number of items
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR1) {
+					return bitmap.getByteCount()/1024;
+				} else {
+					//Didn't have getByteCount before Api Level 12
+					return bitmap.getRowBytes()*bitmap.getHeight()/1024;
+				}
+			}
+		};
+		
 		new FetchItemsTask().execute();
 		
 		mThumbnailThread = new ThumbnailDownloader<ImageView>(new Handler());
 		mThumbnailThread.setListener(new ThumbnailDownloader.Listener<ImageView>() {
 			//Implement the inherited abstract method onThumbnailDownloaded
-			public void onThumbnailDownloaded(ImageView imageView, Bitmap thumbnail) {
+			public void onThumbnailDownloaded(ImageView imageView, String url, Bitmap thumbnail) {
 				if (isVisible()) {
 					imageView.setImageBitmap(thumbnail);
+					addToCache(url, thumbnail);
 				}
 			}
 		});
@@ -115,10 +137,30 @@ public class PhotoStreamFragment extends Fragment {
 			imageView.setImageResource(R.drawable.defaultimage);
 			
 			GalleryItem item = getItem(position);
-			mThumbnailThread.queueThumbnail(imageView, item.getUrl());
+			String url = item.getUrl();
+			Bitmap bitmap = getFromCache(url);
+			if (bitmap == null) {
+				mThumbnailThread.queueThumbnail(imageView, url);
+			} else {
+				imageView.setImageBitmap(bitmap);
+				Log.i(TAG, "Loaded bitmap from cache!");
+			}
 			
 			return convertView;
 		}
 	}
+	
+	//Create some cache methods to put in and get from LruCache
+	public Bitmap getFromCache(String url) {
+		return mCache.get(url);
+	}
+	
+	public void addToCache(String url, Bitmap bitmap) {
+		if (mCache == null) return;
+		if (getFromCache(url) == null) {
+			mCache.put(url, bitmap);
+		}
+	}
+	//End of cache methods
 	
 }
