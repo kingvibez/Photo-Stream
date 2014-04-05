@@ -2,9 +2,9 @@ package com.mohan.android.photogallery;
 
 import android.app.SearchManager;
 import android.content.Intent;
+import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
-import android.util.Log;
 
 public class PhotoStreamActivity extends SingleFragmentActivity {
 	
@@ -32,6 +32,17 @@ public class PhotoStreamActivity extends SingleFragmentActivity {
 		}
 		
 		fragment.updateItems();
+	}
+	
+	//Override startSearch to have the current query highlighted
+	@Override
+	public void startSearch(String initialQuery, boolean selectInitialQuery, 
+			Bundle appSearchData, boolean globalSearch) {
+		
+		String currentQuery = PreferenceManager.getDefaultSharedPreferences(this)
+				.getString(PhotoFetcher.PREF_SEARCH_QUERY, null);
+		
+		super.startSearch(currentQuery, true, appSearchData, globalSearch);
 	}
 
 }
